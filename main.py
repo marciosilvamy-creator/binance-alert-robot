@@ -1,36 +1,13 @@
 import requests
 import time
 import statistics
-import json
 
 BASE_URL = "https://api.binance.com"
-
-history_file = "trade_history.json"
-
-STOP_LOSS = -2
-TAKE_PROFIT = 3
-
-positions = {}
-
-
-def save_history(data):
-
-    try:
-        with open(history_file, "r") as f:
-            history = json.load(f)
-    except:
-        history = []
-
-    history.append(data)
-
-    with open(history_file, "w") as f:
-        json.dump(history, f, indent=4)
 
 
 def get_symbols():
 
     url = f"{BASE_URL}/api/v3/exchangeInfo"
-
     data = requests.get(url).json()
 
     symbols = []
@@ -50,13 +27,12 @@ def get_candles(symbol, limit=60):
     data = requests.get(url).json()
 
     closes = [float(c[4]) for c in data]
-
     volumes = [float(c[5]) for c in data]
 
     return closes, volumes
 
 
-def detect_signal(symbol):
+def analyze_symbol(symbol):
 
     closes, volumes = get_candles(symbol)
 
@@ -70,85 +46,55 @@ def detect_signal(symbol):
 
     volatility = statistics.stdev(closes)
 
-    if volume_ratio > 3 and price_change > 1 and volatility < (sum(closes)/len(closes))*0.01:
+    liquidity = sum(volumes)
 
-        return True
+    score = (volume_ratio * 2) + price_change - (volatility * 10)
 
-    return False
+    return score, volume_ratio, price_change, liquidity
 
 
-def scan_market():
+def super_scan():
 
     symbols = get_symbols()
 
-    signals = []
+    opportunities = []
 
-    print("\n🔎 Escaneando mercado...\n")
+    print("\n🌎 Escaneando todo o mercado...\n")
 
     for symbol in symbols:
 
         try:
 
-            if detect_signal(symbol):
+            score, volume_ratio, price_change, liquidity = analyze_symbol(symbol)
 
-                signals.append(symbol)
+            if liquidity > 100000:
+
+                opportunities.append(
+                    (symbol, score, volume_ratio, price_change)
+                )
 
         except:
             pass
 
-    return signals[:3]
+    opportunities.sort(key=lambda x: x[1], reverse=True)
 
+    print("\n🚀 TOP 10 OPORTUNIDADES DO MERCADO\n")
 
-def monitor():
+    for coin in opportunities[:10]:
 
-    global positions
-
-    for symbol in list(positions.keys()):
-
-        entry = positions[symbol]["entry"]
-
-        current_price = get_candles(symbol, 1)[0][-1]
-
-        change = ((current_price - entry) / entry) * 100
-
-        if change <= STOP_LOSS or change >= TAKE_PROFIT:
-
-            result = {
-
-                "symbol": symbol,
-                "entry": entry,
-                "exit": current_price,
-                "change": round(change, 2)
-
-            }
-
-            save_history(result)
-
-            print(f"📊 Trade finalizado {symbol} {round(change,2)}%")
-
-            del positions[symbol]
+        print(
+            f"{coin[0]} | score {round(coin[1],2)} | volume {round(coin[2],2)}x | movimento {round(coin[3],2)}%"
+        )
 
 
 while True:
 
     try:
 
-        signals = scan_market()
-
-        for symbol in signals:
-
-            if symbol not in positions:
-
-                entry_price = get_candles(symbol, 1)[0][-1]
-
-                positions[symbol] = {"entry": entry_price}
-
-                print(f"🚀 Nova operação simulada {symbol} a {entry_price}")
-
-        monitor()
+        super_scan()
 
     except Exception as e:
 
         print("Erro:", e)
 
-    time.sleep(60)
+    time.sleep(300)
