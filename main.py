@@ -1,8 +1,30 @@
 import requests
 import time
 import statistics
+import json
 
 BASE_URL = "https://api.binance.com"
+
+history_file = "trade_history.json"
+
+STOP_LOSS = -2
+TAKE_PROFIT = 3
+
+positions = {}
+
+
+def save_history(data):
+
+    try:
+        with open(history_file, "r") as f:
+            history = json.load(f)
+    except:
+        history = []
+
+    history.append(data)
+
+    with open(history_file, "w") as f:
+        json.dump(history, f, indent=4)
 
 
 def get_symbols():
@@ -16,7 +38,6 @@ def get_symbols():
     for s in data["symbols"]:
 
         if s["quoteAsset"] == "USDT" and s["status"] == "TRADING":
-
             symbols.append(s["symbol"])
 
     return symbols
@@ -35,7 +56,7 @@ def get_candles(symbol, limit=60):
     return closes, volumes
 
 
-def detect_explosion(symbol):
+def detect_signal(symbol):
 
     closes, volumes = get_candles(symbol)
 
@@ -51,52 +72,83 @@ def detect_explosion(symbol):
 
     if volume_ratio > 3 and price_change > 1 and volatility < (sum(closes)/len(closes))*0.01:
 
-        return volume_ratio, price_change
+        return True
 
-    return None
+    return False
 
 
 def scan_market():
 
     symbols = get_symbols()
 
-    opportunities = []
+    signals = []
 
-    print("\n🔎 Escaneando mercado inteiro...\n")
+    print("\n🔎 Escaneando mercado...\n")
 
     for symbol in symbols:
 
         try:
 
-            result = detect_explosion(symbol)
+            if detect_signal(symbol):
 
-            if result:
-
-                opportunities.append((symbol, result[0], result[1]))
+                signals.append(symbol)
 
         except:
-
             pass
 
-    opportunities.sort(key=lambda x: x[1], reverse=True)
+    return signals[:3]
 
-    print("\n🚀 POSSÍVEIS EXPLOSÕES DE PREÇO\n")
 
-    for coin in opportunities[:10]:
+def monitor():
 
-        print(f"{coin[0]} | volume {round(coin[1],2)}x | movimento {round(coin[2],2)}%")
+    global positions
 
-    return opportunities[:3]
+    for symbol in list(positions.keys()):
+
+        entry = positions[symbol]["entry"]
+
+        current_price = get_candles(symbol, 1)[0][-1]
+
+        change = ((current_price - entry) / entry) * 100
+
+        if change <= STOP_LOSS or change >= TAKE_PROFIT:
+
+            result = {
+
+                "symbol": symbol,
+                "entry": entry,
+                "exit": current_price,
+                "change": round(change, 2)
+
+            }
+
+            save_history(result)
+
+            print(f"📊 Trade finalizado {symbol} {round(change,2)}%")
+
+            del positions[symbol]
 
 
 while True:
 
     try:
 
-        scan_market()
+        signals = scan_market()
+
+        for symbol in signals:
+
+            if symbol not in positions:
+
+                entry_price = get_candles(symbol, 1)[0][-1]
+
+                positions[symbol] = {"entry": entry_price}
+
+                print(f"🚀 Nova operação simulada {symbol} a {entry_price}")
+
+        monitor()
 
     except Exception as e:
 
         print("Erro:", e)
 
-    time.sleep(300)
+    time.sleep(60)
