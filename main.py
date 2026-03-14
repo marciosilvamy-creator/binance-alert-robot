@@ -2,33 +2,41 @@ import requests
 import time
 
 symbol = "BTCUSDT"
-price_alert = 70000  # preço que você quer receber alerta
 
 def get_price():
     url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
-    
-    try:
-        response = requests.get(url)
-        data = response.json()
+    data = requests.get(url).json()
+    return float(data["price"])
 
-        if "price" in data:
-            return float(data["price"])
-        else:
-            print("Erro na resposta da API:", data)
-            return None
+def get_candles():
+    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=120"
+    data = requests.get(url).json()
+    closes = [float(candle[4]) for candle in data]
+    return closes
 
-    except Exception as e:
-        print("Erro ao conectar com a Binance:", e)
-        return None
+def analyze_market():
+    prices = get_candles()
+
+    average_price = sum(prices) / len(prices)
+    current_price = get_price()
+
+    print(f"Preço atual: {current_price}")
+    print(f"Média das últimas 2h: {average_price}")
+
+    if current_price > average_price:
+        print("📈 Tendência de ALTA possível")
+
+    elif current_price < average_price:
+        print("📉 Tendência de QUEDA possível")
+
+    else:
+        print("➡️ Mercado lateral")
 
 
 while True:
-    price = get_price()
+    try:
+        analyze_market()
+    except Exception as e:
+        print("Erro:", e)
 
-    if price:
-        print(f"Preço atual do {symbol}: {price}")
-
-        if price >= price_alert:
-            print("🚨 ALERTA! O preço passou do valor definido!")
-
-    time.sleep(60)
+    time.sleep(300)
