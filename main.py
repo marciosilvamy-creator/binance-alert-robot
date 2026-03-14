@@ -1,13 +1,31 @@
 import requests
 import time
-import statistics
+import json
 
 BASE_URL = "https://api.binance.com"
+
+known_file = "known_symbols.json"
+
+
+def load_known():
+
+    try:
+        with open(known_file, "r") as f:
+            return json.load(f)
+    except:
+        return []
+
+
+def save_known(symbols):
+
+    with open(known_file, "w") as f:
+        json.dump(symbols, f)
 
 
 def get_symbols():
 
     url = f"{BASE_URL}/api/v3/exchangeInfo"
+
     data = requests.get(url).json()
 
     symbols = []
@@ -15,86 +33,45 @@ def get_symbols():
     for s in data["symbols"]:
 
         if s["quoteAsset"] == "USDT" and s["status"] == "TRADING":
+
             symbols.append(s["symbol"])
 
     return symbols
 
 
-def get_candles(symbol, limit=60):
+def detect_new():
 
-    url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval=1m&limit={limit}"
+    known = load_known()
 
-    data = requests.get(url).json()
+    current = get_symbols()
 
-    closes = [float(c[4]) for c in data]
-    volumes = [float(c[5]) for c in data]
+    new_coins = []
 
-    return closes, volumes
+    for symbol in current:
 
+        if symbol not in known:
 
-def analyze_symbol(symbol):
+            new_coins.append(symbol)
 
-    closes, volumes = get_candles(symbol)
+    if new_coins:
 
-    avg_volume = sum(volumes[:-1]) / len(volumes[:-1])
+        print("\n🚀 NOVAS MOEDAS DETECTADAS\n")
 
-    current_volume = volumes[-1]
+        for coin in new_coins:
 
-    volume_ratio = current_volume / avg_volume
+            print(coin)
 
-    price_change = ((closes[-1] - closes[0]) / closes[0]) * 100
-
-    volatility = statistics.stdev(closes)
-
-    liquidity = sum(volumes)
-
-    score = (volume_ratio * 2) + price_change - (volatility * 10)
-
-    return score, volume_ratio, price_change, liquidity
-
-
-def super_scan():
-
-    symbols = get_symbols()
-
-    opportunities = []
-
-    print("\n🌎 Escaneando todo o mercado...\n")
-
-    for symbol in symbols:
-
-        try:
-
-            score, volume_ratio, price_change, liquidity = analyze_symbol(symbol)
-
-            if liquidity > 100000:
-
-                opportunities.append(
-                    (symbol, score, volume_ratio, price_change)
-                )
-
-        except:
-            pass
-
-    opportunities.sort(key=lambda x: x[1], reverse=True)
-
-    print("\n🚀 TOP 10 OPORTUNIDADES DO MERCADO\n")
-
-    for coin in opportunities[:10]:
-
-        print(
-            f"{coin[0]} | score {round(coin[1],2)} | volume {round(coin[2],2)}x | movimento {round(coin[3],2)}%"
-        )
+    save_known(current)
 
 
 while True:
 
     try:
 
-        super_scan()
+        detect_new()
 
     except Exception as e:
 
         print("Erro:", e)
 
-    time.sleep(300)
+    time.sleep(600)
