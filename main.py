@@ -1,177 +1,218 @@
 import requests
 import time
-import statistics
-import json
+import smtplib
+from datetime import datetime
+from binance.client import Client
 
-BASE_URL = "https://api.binance.com"
+# =========================
+# CONFIGURAÇÕES
+# =========================
 
-positions = {}
+API_KEY = "COLOQUE_SUA_API_AQUI"
+API_SECRET = "COLOQUE_SUA_SECRET_AQUI"
 
-known_file = "known_symbols.json"
+EMAIL_USER = "seuemail@gmail.com"
+EMAIL_PASS = "senha_email"
+EMAIL_TO = "seuemail@gmail.com"
 
+RISK_PERCENT = 0.05
 STOP_LOSS = -2
 TAKE_PROFIT = 3
 
+BASE_URL = "https://api.binance.com"
+
+client = Client(API_KEY, API_SECRET)
+
+positions = {}
+trade_history = []
+
+# =========================
+# PEGAR MOEDAS
+# =========================
 
 def get_symbols():
 
-    url = f"{BASE_URL}/api/v3/exchangeInfo"
-
-    data = requests.get(url).json()
+    data = requests.get(BASE_URL + "/api/v3/exchangeInfo").json()
 
     symbols = []
 
     for s in data["symbols"]:
-
         if s["quoteAsset"] == "USDT" and s["status"] == "TRADING":
-
             symbols.append(s["symbol"])
 
     return symbols
 
 
-def get_candles(symbol, limit=60):
+# =========================
+# PREÇO ATUAL
+# =========================
 
-    url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval=1m&limit={limit}"
+def get_price(symbol):
 
-    data = requests.get(url).json()
+    data = requests.get(
+        BASE_URL + "/api/v3/ticker/price?symbol=" + symbol
+    ).json()
 
-    closes = [float(c[4]) for c in data]
-
-    volumes = [float(c[5]) for c in data]
-
-    return closes, volumes
-
-
-def scan_market():
-
-    symbols = get_symbols()
-
-    results = []
-
-    print("\n🔎 ESCANEANDO MERCADO\n")
-
-    for symbol in symbols:
-
-        try:
-
-            closes, volumes = get_candles(symbol)
-
-            price_change = ((closes[-1] - closes[0]) / closes[0]) * 100
-
-            volume_ratio = volumes[-1] / (sum(volumes)/len(volumes))
-
-            score = price_change + volume_ratio
-
-            results.append((symbol, score))
-
-        except:
-            pass
-
-    results.sort(key=lambda x: x[1], reverse=True)
-
-    top = results[:5]
-
-    print("\n⭐ MOEDAS MAIS FORTES\n")
-
-    for coin in top:
-
-        print(coin[0], "score", round(coin[1],2))
-
-    return [c[0] for c in top]
+    return float(data["price"])
 
 
-def detect_explosion(symbol):
+# =========================
+# SALDO
+# =========================
 
-    closes, volumes = get_candles(symbol)
+def get_balance():
 
-    avg_volume = sum(volumes[:-1]) / len(volumes[:-1])
+    balance = client.get_asset_balance(asset="USDT")
 
-    volume_ratio = volumes[-1] / avg_volume
-
-    if volume_ratio > 3:
-
-        print(f"🚀 POSSÍVEL EXPLOSÃO {symbol} volume {round(volume_ratio,2)}x")
+    return float(balance["free"])
 
 
-def detect_new():
+# =========================
+# TAMANHO DA OPERAÇÃO
+# =========================
 
-    try:
+def calculate_trade_size():
 
-        with open(known_file,"r") as f:
+    balance = get_balance()
 
-            known = json.load(f)
-
-    except:
-
-        known = []
-
-    current = get_symbols()
-
-    new = [s for s in current if s not in known]
-
-    if new:
-
-        print("\n🆕 NOVAS MOEDAS\n")
-
-        for coin in new:
-
-            print(coin)
-
-    with open(known_file,"w") as f:
-
-        json.dump(current,f)
+    return balance * RISK_PERCENT
 
 
-def monitor_positions():
+# =========================
+# COMPRA
+# =========================
 
-    global positions
+def buy(symbol):
+
+    amount = calculate_trade_size()
+
+    order = client.order_market_buy(
+        symbol=symbol,
+        quoteOrderQty=amount
+    )
+
+    price = get_price(symbol)
+
+    positions[symbol] = {
+        "buy_price": price,
+        "amount": amount
+    }
+
+    trade_history.append(f"COMPRA {symbol} preço {price}")
+
+    print("COMPRA:", symbol)
+
+
+# =========================
+# VENDA
+# =========================
+
+def sell(symbol):
+
+    asset = symbol.replace("USDT","")
+
+    balance = client.get_asset_balance(asset=asset)
+
+    quantity = float(balance["free"])
+
+    order = client.order_market_sell(
+        symbol=symbol,
+        quantity=quantity
+    )
+
+    price = get_price(symbol)
+
+    trade_history.append(f"VENDA {symbol} preço {price}")
+
+    del positions[symbol]
+
+    print("VENDA:", symbol)
+
+
+# =========================
+# VERIFICAR STOP / PROFIT
+# =========================
+
+def check_positions():
 
     for symbol in list(positions.keys()):
 
-        entry = positions[symbol]
+        buy_price = positions[symbol]["buy_price"]
 
-        current_price = get_candles(symbol,1)[0][-1]
+        price = get_price(symbol)
 
-        change = ((current_price-entry)/entry)*100
+        change = ((price - buy_price) / buy_price) * 100
 
-        if change <= STOP_LOSS:
+        if change <= STOP_LOSS or change >= TAKE_PROFIT:
 
-            print(f"🔴 STOP LOSS {symbol} {round(change,2)}%")
+            sell(symbol)
 
-            del positions[symbol]
 
-        elif change >= TAKE_PROFIT:
+# =========================
+# SINAL SIMPLES
+# =========================
 
-            print(f"🟢 TAKE PROFIT {symbol} {round(change,2)}%")
+def simple_signal(symbol):
 
-            del positions[symbol]
+    price = get_price(symbol)
 
+    if price:
+        return "BUY"
+
+    return None
+
+
+# =========================
+# RELATÓRIO EMAIL
+# =========================
+
+def send_report():
+
+    text = "RELATÓRIO DIÁRIO\n\n"
+
+    text += "\n".join(trade_history)
+
+    server = smtplib.SMTP("smtp.gmail.com",587)
+
+    server.starttls()
+
+    server.login(EMAIL_USER,EMAIL_PASS)
+
+    server.sendmail(
+        EMAIL_USER,
+        EMAIL_TO,
+        text
+    )
+
+    server.quit()
+
+
+# =========================
+# LOOP PRINCIPAL
+# =========================
+
+symbols = get_symbols()
+
+last_report_day = None
 
 while True:
 
-    try:
+    for symbol in symbols[:20]:
 
-        detect_new()
+        signal = simple_signal(symbol)
 
-        top_coins = scan_market()
+        if signal == "BUY" and symbol not in positions:
 
-        for coin in top_coins:
+            buy(symbol)
 
-            detect_explosion(coin)
+    check_positions()
 
-            if coin not in positions:
+    today = datetime.now().day
 
-                price = get_candles(coin,1)[0][-1]
+    if last_report_day != today:
 
-                positions[coin] = price
+        send_report()
 
-                print(f"📈 SIMULAÇÃO DE COMPRA {coin} a {price}")
-
-        monitor_positions()
-
-    except Exception as e:
-
-        print("Erro:",e)
+        last_report_day = today
 
     time.sleep(300)
