@@ -1,27 +1,32 @@
 import requests
 import time
 
+BASE_URL = "https://api.binance.com"
+
 def get_symbols():
-    url = "https://api.binance.com/api/v3/ticker/price"
+
+    url = f"{BASE_URL}/api/v3/exchangeInfo"
+
     data = requests.get(url).json()
 
     symbols = []
 
-    for item in data:
-        if item["symbol"].endswith("USDT"):
-            symbols.append(item["symbol"])
+    for s in data["symbols"]:
+
+        if s["quoteAsset"] == "USDT" and s["status"] == "TRADING":
+            symbols.append(s["symbol"])
 
     return symbols
 
 
 def get_candles(symbol):
 
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=60"
+    url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval=1m&limit=60"
 
     data = requests.get(url).json()
 
-    closes = [float(candle[4]) for candle in data]
-    volumes = [float(candle[5]) for candle in data]
+    closes = [float(c[4]) for c in data]
+    volumes = [float(c[5]) for c in data]
 
     return closes, volumes
 
@@ -30,51 +35,50 @@ def analyze(symbol):
 
     closes, volumes = get_candles(symbol)
 
-    price_start = closes[0]
-    price_end = closes[-1]
+    price_change = ((closes[-1] - closes[0]) / closes[0]) * 100
 
-    volume_start = volumes[0]
-    volume_end = volumes[-1]
+    volume_change = ((volumes[-1] - volumes[0]) / volumes[0]) * 100
 
-    price_change = ((price_end - price_start) / price_start) * 100
-
-    volume_change = ((volume_end - volume_start) / volume_start) * 100
-
-    if price_change > 1 and volume_change > 20:
+    if price_change > 1 and volume_change > 30:
         return price_change, volume_change
 
     return None
 
 
-def scan():
+def scan_market():
 
     symbols = get_symbols()
 
-    signals = []
+    results = []
 
-    for symbol in symbols[:80]:
+    print(f"\n🔎 Analisando {len(symbols)} moedas...\n")
+
+    for symbol in symbols:
 
         try:
+
             result = analyze(symbol)
 
             if result:
-                signals.append((symbol, result[0], result[1]))
+                results.append((symbol, result[0], result[1]))
 
         except:
             pass
 
-    signals.sort(key=lambda x: x[1], reverse=True)
+    results.sort(key=lambda x: x[1], reverse=True)
 
-    print("\n🚀 POSSÍVEIS OPORTUNIDADES\n")
+    print("\n🚀 MELHORES OPORTUNIDADES\n")
 
-    for s in signals[:5]:
-        print(f"{s[0]} | preço: {round(s[1],2)}% | volume: {round(s[2],2)}%")
+    for coin in results[:10]:
+
+        print(f"{coin[0]} | preço: {round(coin[1],2)}% | volume: {round(coin[2],2)}%")
 
 
 while True:
 
     try:
-        scan()
+        scan_market()
+
     except Exception as e:
         print("Erro:", e)
 
