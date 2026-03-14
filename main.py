@@ -3,17 +3,20 @@ import time
 
 BASE_URL = "https://api.binance.com"
 
+positions = {}
+
+STOP_LOSS = -2
+TAKE_PROFIT = 3
+
 
 def get_symbols():
 
     url = f"{BASE_URL}/api/v3/exchangeInfo"
-
     data = requests.get(url).json()
 
     symbols = []
 
     for s in data["symbols"]:
-
         if s["quoteAsset"] == "USDT" and s["status"] == "TRADING":
             symbols.append(s["symbol"])
 
@@ -73,7 +76,6 @@ def scan_market():
     print("\n🚀 TOP 3 MOEDAS\n")
 
     for coin in top:
-
         print(coin)
 
     return top
@@ -81,7 +83,9 @@ def scan_market():
 
 def monitor(symbols):
 
-    print("\n📊 Monitorando moedas...\n")
+    global positions
+
+    print("\n📊 Monitorando...\n")
 
     for symbol in symbols:
 
@@ -97,9 +101,32 @@ def monitor(symbols):
 
             current_volume = volumes[-1]
 
-            if current_price > avg_price and current_volume > avg_volume:
+            # sinal de compra
+            if symbol not in positions:
 
-                print(f"🚨 POSSÍVEL COMPRA: {symbol}")
+                if current_price > avg_price and current_volume > avg_volume:
+
+                    positions[symbol] = current_price
+
+                    print(f"🟢 COMPRA: {symbol} a {current_price}")
+
+            else:
+
+                entry = positions[symbol]
+
+                change = ((current_price - entry) / entry) * 100
+
+                if change <= STOP_LOSS:
+
+                    print(f"🔴 STOP LOSS: vender {symbol} | {round(change,2)}%")
+
+                    del positions[symbol]
+
+                elif change >= TAKE_PROFIT:
+
+                    print(f"🟢 TAKE PROFIT: vender {symbol} | {round(change,2)}%")
+
+                    del positions[symbol]
 
         except:
             pass
