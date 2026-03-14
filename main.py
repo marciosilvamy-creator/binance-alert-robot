@@ -10,7 +10,6 @@ TAKE_PROFIT = 3
 
 
 def get_symbols():
-
     url = f"{BASE_URL}/api/v3/exchangeInfo"
     data = requests.get(url).json()
 
@@ -23,7 +22,7 @@ def get_symbols():
     return symbols
 
 
-def get_candles(symbol, limit=30):
+def get_candles(symbol, limit=50):
 
     url = f"{BASE_URL}/api/v3/klines?symbol={symbol}&interval=1m&limit={limit}"
 
@@ -35,26 +34,39 @@ def get_candles(symbol, limit=30):
     return closes, volumes
 
 
-def analyze(symbol):
+def calculate_rsi(closes, period=14):
 
-    closes, volumes = get_candles(symbol)
+    gains = []
+    losses = []
 
-    price_change = ((closes[-1] - closes[0]) / closes[0]) * 100
+    for i in range(1, len(closes)):
+        diff = closes[i] - closes[i - 1]
 
-    avg_volume = sum(volumes) / len(volumes)
+        if diff >= 0:
+            gains.append(diff)
+            losses.append(0)
+        else:
+            gains.append(0)
+            losses.append(abs(diff))
 
-    volume_spike = (volumes[-1] / avg_volume) * 100
+    avg_gain = sum(gains[-period:]) / period
+    avg_loss = sum(losses[-period:]) / period
 
-    score = price_change + (volume_spike / 10)
+    if avg_loss == 0:
+        return 100
 
-    return score
+    rs = avg_gain / avg_loss
+
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi
 
 
 def scan_market():
 
     symbols = get_symbols()
 
-    results = []
+    scores = []
 
     print("\n🔎 Escaneando mercado...\n")
 
@@ -62,16 +74,24 @@ def scan_market():
 
         try:
 
-            score = analyze(symbol)
+            closes, volumes = get_candles(symbol)
 
-            results.append((symbol, score))
+            price_change = ((closes[-1] - closes[0]) / closes[0]) * 100
+
+            avg_volume = sum(volumes) / len(volumes)
+
+            volume_spike = volumes[-1] / avg_volume
+
+            score = price_change + volume_spike
+
+            scores.append((symbol, score))
 
         except:
             pass
 
-    results.sort(key=lambda x: x[1], reverse=True)
+    scores.sort(key=lambda x: x[1], reverse=True)
 
-    top = [coin[0] for coin in results[:3]]
+    top = [coin[0] for coin in scores[:3]]
 
     print("\n🚀 TOP 3 MOEDAS\n")
 
@@ -85,30 +105,29 @@ def monitor(symbols):
 
     global positions
 
-    print("\n📊 Monitorando...\n")
-
     for symbol in symbols:
 
         try:
 
-            closes, volumes = get_candles(symbol, 20)
+            closes, volumes = get_candles(symbol)
 
             avg_price = sum(closes) / len(closes)
 
             current_price = closes[-1]
 
+            rsi = calculate_rsi(closes)
+
             avg_volume = sum(volumes) / len(volumes)
 
             current_volume = volumes[-1]
 
-            # sinal de compra
             if symbol not in positions:
 
-                if current_price > avg_price and current_volume > avg_volume:
+                if current_price > avg_price and 50 < rsi < 70 and current_volume > avg_volume:
 
                     positions[symbol] = current_price
 
-                    print(f"🟢 COMPRA: {symbol} a {current_price}")
+                    print(f"🟢 COMPRA {symbol} a {current_price} | RSI {round(rsi,2)}")
 
             else:
 
@@ -118,13 +137,13 @@ def monitor(symbols):
 
                 if change <= STOP_LOSS:
 
-                    print(f"🔴 STOP LOSS: vender {symbol} | {round(change,2)}%")
+                    print(f"🔴 STOP LOSS {symbol} {round(change,2)}%")
 
                     del positions[symbol]
 
                 elif change >= TAKE_PROFIT:
 
-                    print(f"🟢 TAKE PROFIT: vender {symbol} | {round(change,2)}%")
+                    print(f"🟢 TAKE PROFIT {symbol} {round(change,2)}%")
 
                     del positions[symbol]
 
