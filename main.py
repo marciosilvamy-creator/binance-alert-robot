@@ -1,41 +1,63 @@
 import requests
 import time
 
-symbol = "BTCUSDT"
-
-def get_price():
-    url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+def get_symbols():
+    url = "https://api.binance.com/api/v3/ticker/price"
     data = requests.get(url).json()
-    return float(data["price"])
 
-def get_candles():
+    symbols = []
+    for item in data:
+        if "USDT" in item["symbol"]:
+            symbols.append(item["symbol"])
+
+    return symbols
+
+
+def get_candles(symbol):
     url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=120"
     data = requests.get(url).json()
+
     closes = [float(candle[4]) for candle in data]
+
     return closes
 
-def analyze_market():
-    prices = get_candles()
 
-    average_price = sum(prices) / len(prices)
-    current_price = get_price()
+def analyze_symbol(symbol):
+    prices = get_candles(symbol)
 
-    print(f"Preço atual: {current_price}")
-    print(f"Média das últimas 2h: {average_price}")
+    first = prices[0]
+    last = prices[-1]
 
-    if current_price > average_price:
-        print("📈 Tendência de ALTA possível")
+    change = ((last - first) / first) * 100
 
-    elif current_price < average_price:
-        print("📉 Tendência de QUEDA possível")
+    return change
 
-    else:
-        print("➡️ Mercado lateral")
+
+def scan_market():
+
+    symbols = get_symbols()
+
+    results = []
+
+    for symbol in symbols[:50]:  # limita para não sobrecarregar
+        try:
+            change = analyze_symbol(symbol)
+            results.append((symbol, change))
+        except:
+            pass
+
+    results.sort(key=lambda x: x[1], reverse=True)
+
+    print("\n🚀 TOP 3 MOEDAS COM MAIOR SUBIDA\n")
+
+    for coin in results[:3]:
+        print(f"{coin[0]}  |  {round(coin[1],2)} %")
 
 
 while True:
+
     try:
-        analyze_market()
+        scan_market()
     except Exception as e:
         print("Erro:", e)
 
