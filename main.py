@@ -6,58 +6,75 @@ def get_symbols():
     data = requests.get(url).json()
 
     symbols = []
+
     for item in data:
-        if "USDT" in item["symbol"]:
+        if item["symbol"].endswith("USDT"):
             symbols.append(item["symbol"])
 
     return symbols
 
 
 def get_candles(symbol):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=120"
+
+    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&limit=60"
+
     data = requests.get(url).json()
 
     closes = [float(candle[4]) for candle in data]
+    volumes = [float(candle[5]) for candle in data]
 
-    return closes
-
-
-def analyze_symbol(symbol):
-    prices = get_candles(symbol)
-
-    first = prices[0]
-    last = prices[-1]
-
-    change = ((last - first) / first) * 100
-
-    return change
+    return closes, volumes
 
 
-def scan_market():
+def analyze(symbol):
+
+    closes, volumes = get_candles(symbol)
+
+    price_start = closes[0]
+    price_end = closes[-1]
+
+    volume_start = volumes[0]
+    volume_end = volumes[-1]
+
+    price_change = ((price_end - price_start) / price_start) * 100
+
+    volume_change = ((volume_end - volume_start) / volume_start) * 100
+
+    if price_change > 1 and volume_change > 20:
+        return price_change, volume_change
+
+    return None
+
+
+def scan():
 
     symbols = get_symbols()
 
-    results = []
+    signals = []
 
-    for symbol in symbols[:50]:  # limita para não sobrecarregar
+    for symbol in symbols[:80]:
+
         try:
-            change = analyze_symbol(symbol)
-            results.append((symbol, change))
+            result = analyze(symbol)
+
+            if result:
+                signals.append((symbol, result[0], result[1]))
+
         except:
             pass
 
-    results.sort(key=lambda x: x[1], reverse=True)
+    signals.sort(key=lambda x: x[1], reverse=True)
 
-    print("\n🚀 TOP 3 MOEDAS COM MAIOR SUBIDA\n")
+    print("\n🚀 POSSÍVEIS OPORTUNIDADES\n")
 
-    for coin in results[:3]:
-        print(f"{coin[0]}  |  {round(coin[1],2)} %")
+    for s in signals[:5]:
+        print(f"{s[0]} | preço: {round(s[1],2)}% | volume: {round(s[2],2)}%")
 
 
 while True:
 
     try:
-        scan_market()
+        scan()
     except Exception as e:
         print("Erro:", e)
 
