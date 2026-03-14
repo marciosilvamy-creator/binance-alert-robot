@@ -4,15 +4,12 @@ import time
 BASE_URL = "https://api.binance.com"
 
 def get_symbols():
-
     url = f"{BASE_URL}/api/v3/exchangeInfo"
-
     data = requests.get(url).json()
 
     symbols = []
 
     for s in data["symbols"]:
-
         if s["quoteAsset"] == "USDT" and s["status"] == "TRADING":
             symbols.append(s["symbol"])
 
@@ -35,12 +32,18 @@ def analyze(symbol):
 
     closes, volumes = get_candles(symbol)
 
+    current_price = closes[-1]
+    average_price = sum(closes) / len(closes)
+
     price_change = ((closes[-1] - closes[0]) / closes[0]) * 100
 
-    volume_change = ((volumes[-1] - volumes[0]) / volumes[0]) * 100
+    avg_volume = sum(volumes) / len(volumes)
+    last_volume = volumes[-1]
 
-    if price_change > 1 and volume_change > 30:
-        return price_change, volume_change
+    volume_spike = (last_volume / avg_volume) * 100
+
+    if current_price > average_price and price_change > 1 and volume_spike > 150:
+        return price_change, volume_spike
 
     return None
 
@@ -67,11 +70,11 @@ def scan_market():
 
     results.sort(key=lambda x: x[1], reverse=True)
 
-    print("\n🚀 MELHORES OPORTUNIDADES\n")
+    print("\n🚀 POSSÍVEIS BREAKOUTS\n")
 
     for coin in results[:10]:
 
-        print(f"{coin[0]} | preço: {round(coin[1],2)}% | volume: {round(coin[2],2)}%")
+        print(f"{coin[0]} | subida: {round(coin[1],2)}% | volume: {round(coin[2],2)}%")
 
 
 while True:
