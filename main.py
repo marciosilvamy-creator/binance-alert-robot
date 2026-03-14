@@ -1,5 +1,6 @@
 import requests
 import time
+import statistics
 
 BASE_URL = "https://api.binance.com"
 
@@ -40,7 +41,7 @@ def calculate_rsi(closes, period=14):
     losses = []
 
     for i in range(1, len(closes)):
-        diff = closes[i] - closes[i - 1]
+        diff = closes[i] - closes[i-1]
 
         if diff >= 0:
             gains.append(diff)
@@ -62,6 +63,28 @@ def calculate_rsi(closes, period=14):
     return rsi
 
 
+def calculate_bollinger(closes):
+
+    sma = sum(closes) / len(closes)
+
+    std = statistics.stdev(closes)
+
+    upper = sma + (std * 2)
+    lower = sma - (std * 2)
+
+    return upper, lower
+
+
+def calculate_macd(closes):
+
+    ema12 = sum(closes[-12:]) / 12
+    ema26 = sum(closes[-26:]) / 26
+
+    macd = ema12 - ema26
+
+    return macd
+
+
 def scan_market():
 
     symbols = get_symbols()
@@ -76,13 +99,11 @@ def scan_market():
 
             closes, volumes = get_candles(symbol)
 
-            price_change = ((closes[-1] - closes[0]) / closes[0]) * 100
+            change = ((closes[-1] - closes[0]) / closes[0]) * 100
 
-            avg_volume = sum(volumes) / len(volumes)
+            volume_spike = volumes[-1] / (sum(volumes)/len(volumes))
 
-            volume_spike = volumes[-1] / avg_volume
-
-            score = price_change + volume_spike
+            score = change + volume_spike
 
             scores.append((symbol, score))
 
@@ -111,29 +132,39 @@ def monitor(symbols):
 
             closes, volumes = get_candles(symbol)
 
-            avg_price = sum(closes) / len(closes)
-
             current_price = closes[-1]
+
+            avg_price = sum(closes) / len(closes)
 
             rsi = calculate_rsi(closes)
 
-            avg_volume = sum(volumes) / len(volumes)
+            upper, lower = calculate_bollinger(closes)
+
+            macd = calculate_macd(closes)
+
+            avg_volume = sum(volumes)/len(volumes)
 
             current_volume = volumes[-1]
 
             if symbol not in positions:
 
-                if current_price > avg_price and 50 < rsi < 70 and current_volume > avg_volume:
+                if (
+                    current_price > avg_price
+                    and 50 < rsi < 70
+                    and current_volume > avg_volume
+                    and current_price < upper
+                    and macd > 0
+                ):
 
                     positions[symbol] = current_price
 
-                    print(f"🟢 COMPRA {symbol} a {current_price} | RSI {round(rsi,2)}")
+                    print(f"🟢 COMPRA {symbol} | preço {current_price}")
 
             else:
 
                 entry = positions[symbol]
 
-                change = ((current_price - entry) / entry) * 100
+                change = ((current_price - entry)/entry) * 100
 
                 if change <= STOP_LOSS:
 
